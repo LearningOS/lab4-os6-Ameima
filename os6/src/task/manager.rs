@@ -15,22 +15,51 @@ pub struct TaskManager {
 }
 
 // YOUR JOB: FIFO->Stride
-/// A simple FIFO scheduler.
+// 采用Stride调度模型，进程按优先级对应的步长增加长度
+// 每次取用长度最短的进程
 impl TaskManager {
+    // 新建调度器
     pub fn new() -> Self {
         Self {
             ready_queue: VecDeque::new(),
         }
     }
-    /// Add process back to ready queue
+    // 将任务压回待调度队列
     pub fn add(&mut self, task: Arc<TaskControlBlock>) {
         self.ready_queue.push_back(task);
     }
-    /// Take a process out of the ready queue
+    // 从待调度队列弹出最前端的任务
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        self.ready_queue.pop_front()
+        let mut min_pass: usize = core::usize::MAX;
+        let mut min_pass_index: Option<usize> = None;
+        for index in 0..self.ready_queue.len() {
+            let index_pass = self.ready_queue[index].inner_exclusive_access().task_pass;
+            if index_pass <= min_pass {
+                min_pass = index_pass;
+                min_pass_index = Some(index);
+            }
+        }
+        self.ready_queue.swap_remove_back(min_pass_index.unwrap())
     }
 }
+
+// // YOUR JOB: FIFO->Stride
+// /// A simple FIFO scheduler.
+// impl TaskManager {
+//     pub fn new() -> Self {
+//         Self {
+//             ready_queue: VecDeque::new(),
+//         }
+//     }
+//     /// Add process back to ready queue
+//     pub fn add(&mut self, task: Arc<TaskControlBlock>) {
+//         self.ready_queue.push_back(task);
+//     }
+//     /// Take a process out of the ready queue
+//     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
+//         self.ready_queue.pop_front()
+//     }
+// }
 
 lazy_static! {
     /// TASK_MANAGER instance through lazy_static!

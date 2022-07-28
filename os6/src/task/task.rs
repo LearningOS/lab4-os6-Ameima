@@ -2,7 +2,7 @@
 
 use super::TaskContext;
 use super::{pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT;
+use crate::config::{TRAP_CONTEXT, MAX_SYSCALL_NUM};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
@@ -50,6 +50,14 @@ pub struct TaskControlBlockInner {
     /// It is set when active exit or execution error occurs
     pub exit_code: i32,
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+    // 各种系统调用的次数
+    pub task_syscall_times: [u32; MAX_SYSCALL_NUM],
+    // 任务第一次被调度的时刻
+    pub task_first_running_time: Option<usize>,
+    // 该进程当前已经运行的“长度”
+    pub task_pass: usize,
+    // 进程的优先级
+    pub task_priority: usize,
 }
 
 /// Simple access to its internal fields
@@ -70,6 +78,12 @@ impl TaskControlBlockInner {
     }
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
+    }
+    // 设置优先级
+    pub fn set_task_priority(&mut self, prio: isize) -> isize {
+        if prio < 2 { return -1; }
+        self.task_priority = prio as usize;
+        prio
     }
     pub fn alloc_fd(&mut self) -> usize {
         if let Some(fd) = (0..self.fd_table.len())
@@ -124,6 +138,10 @@ impl TaskControlBlock {
                         // 2 -> stderr
                         Some(Arc::new(Stdout)),
                     ],
+                    task_syscall_times: [0; MAX_SYSCALL_NUM], // 各种系统调用的次数
+                    task_first_running_time: None, // 任务第一次被调度的时刻
+                    task_pass: 0, // 运行长度
+                    task_priority: 16, // 优先级
                 })
             },
         };
@@ -150,6 +168,8 @@ impl TaskControlBlock {
         let mut inner = self.inner_exclusive_access();
         // substitute memory_set
         inner.memory_set = memory_set;
+        // 替换优先级
+        inner.task_priority = 16;
         // update trap_cx ppn
         inner.trap_cx_ppn = trap_cx_ppn;
         // initialize trap_cx
@@ -200,6 +220,10 @@ impl TaskControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: new_fd_table,
+                    task_syscall_times: parent_inner.task_syscall_times, // 各种系统调用的次数
+                    task_first_running_time: parent_inner.task_first_running_time, // 任务第一次被调度的时刻
+                    task_pass: parent_inner.task_pass, // 运行长度
+                    task_priority: parent_inner.task_priority, // 优先级
                 })
             },
         });
