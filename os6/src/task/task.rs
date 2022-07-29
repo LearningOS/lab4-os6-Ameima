@@ -238,6 +238,57 @@ impl TaskControlBlock {
         // ---- release parent PCB automatically
         // **** release children PCB automatically
     }
+    pub fn spawn(self: &Arc<TaskControlBlock>, elf_data: &[u8]) -> Arc<TaskControlBlock> {
+        let mut parent_inner = self.inner_exclusive_access();
+        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr::from(TRAP_CONTEXT).into())
+            .unwrap()
+            .ppn();
+        let pid_handle = pid_alloc();
+        let kernel_stack = KernelStack::new(&pid_handle);
+        let kernel_stack_top = kernel_stack.get_top();
+        let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
+        // clone all fds from parent to child
+        for fd in parent_inner.fd_table.iter() {
+            if let Some(file) = fd {
+                new_fd_table.push(Some(file.clone()));
+            } else {
+                new_fd_table.push(None);
+            }
+        }
+        let task_control_block = Arc::new(TaskControlBlock {
+            pid: pid_handle,
+            kernel_stack,
+            inner: unsafe {
+                UPSafeCell::new(TaskControlBlockInner {
+                    trap_cx_ppn,
+                    base_size: parent_inner.base_size,
+                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                    task_status: TaskStatus::Ready,
+                    memory_set,
+                    parent: Some(Arc::downgrade(self)),
+                    children: Vec::new(),
+                    exit_code: 0,
+                    fd_table: new_fd_table,
+                    task_syscall_times: [0; MAX_SYSCALL_NUM], // 各种系统调用的次数
+                    task_first_running_time: None, // 任务第一次被调度的时刻
+                    task_pass: 0, // 运行长度
+                    task_priority: 16, // 优先级
+                })
+            },
+        });
+        parent_inner.children.push(task_control_block.clone());
+        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+        *trap_cx = TrapContext::app_init_context(
+            entry_point,
+            user_sp,
+            KERNEL_SPACE.exclusive_access().token(),
+            kernel_stack_top,
+            trap_handler as usize,
+        );
+        task_control_block
+    }
     pub fn getpid(&self) -> usize {
         self.pid.0
     }

@@ -5,7 +5,7 @@ use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next,
     suspend_current_and_run_next, TaskStatus,
 };
-use crate::fs::{open_file, OpenFlags};
+use crate::fs::{open_file, OpenFlags, File};
 use crate::timer::get_time_us;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -160,23 +160,50 @@ pub fn sys_munmap(start: usize, len: usize) -> isize {
 }
 
 
+// // YOUR JOB: 实现 sys_spawn 系统调用
+// // 旧实现，会访存错误
+// pub fn sys_spawn(path: *const u8) -> isize {
+//     let token = current_user_token();
+//     let path = translated_str(token, path);
+//     if let Some(data) = open_file(path.as_str(), OpenFlags::RDONLY) {
+//         let new_task = Arc::new(TaskControlBlock::new(data.read_all().as_slice()));
+//         let mut new_inner = new_task.inner_exclusive_access();
+//         let parent = current_task().unwrap();
+//         let mut parent_inner = parent.inner_exclusive_access();
+//         new_inner.parent = Some(Arc::downgrade(&parent));
+//         parent_inner.children.push(new_task.clone());
+//         let pid = new_task.pid.0 as isize;
+//         let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
+//         // clone all fds from parent to child
+//         for fd in parent_inner.fd_table.iter() {
+//             if let Some(file) = fd {
+//                 new_fd_table.push(Some(file.clone()));
+//             } else {
+//                 new_fd_table.push(None);
+//             }
+//         }
+//         new_inner.fd_table = new_fd_table;
+//         drop(new_inner);
+//         drop(parent_inner);
+//         add_task(new_task);
+//         pid
+//     } else {
+//         -1
+//     }
+// }
+
 // YOUR JOB: 实现 sys_spawn 系统调用
 // ALERT: 注意在实现 SPAWN 时不需要复制父进程地址空间，SPAWN != FORK + EXEC 
-pub fn sys_spawn(path: *const u8) -> isize {
+pub fn sys_spawn(_path: *const u8) -> isize {
     let token = current_user_token();
-    let path = translated_str(token, path);
-    if let Some(data) = open_file(path.as_str(), OpenFlags::RDONLY) {
-        let new_task = Arc::new(TaskControlBlock::new(data.read_all().as_slice()));
-        let mut new_inner = new_task.inner_exclusive_access();
-        let parent = current_task().unwrap();
-        let mut parent_inner = parent.inner_exclusive_access();
-        new_inner.parent = Some(Arc::downgrade(&parent));
-        parent_inner.children.push(new_task.clone());
-        let pid = new_task.pid.0 as isize;
-        drop(new_inner);
-        drop(parent_inner);
+    let path = translated_str(token, _path);
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
+        let curr_task = current_task().unwrap();
+        let new_task = curr_task.spawn(all_data.as_slice());
+        let new_pid = new_task.pid.0;
         add_task(new_task);
-        pid
+        new_pid as isize
     } else {
         -1
     }
