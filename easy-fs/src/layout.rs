@@ -92,6 +92,7 @@ pub struct DiskInode {
     pub direct: [u32; INODE_DIRECT_COUNT],
     pub indirect1: u32,
     pub indirect2: u32,
+    pub nlink: u32,
     type_: DiskInodeType,
 }
 

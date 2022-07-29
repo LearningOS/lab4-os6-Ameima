@@ -281,6 +281,7 @@ pub fn sleep_blocking(sleep_ms: usize) {
 pub fn sleep(period_ms: usize) {
     let start = get_time();
     while get_time() < start + period_ms as isize {
+        println!("yield");
         sys_yield();
     }
 }

@@ -23,7 +23,7 @@ use manager::fetch_task;
 use switch::__switch;
 use crate::mm::VirtAddr;
 use crate::mm::MapPermission;
-use crate::config::PAGE_SIZE;
+use crate::config::{PAGE_SIZE, BIG_STRIDE};
 use crate::timer::get_time_us;
 pub use crate::syscall::process::TaskInfo;
 use crate::fs::{open_file, OpenFlags};
@@ -46,6 +46,8 @@ pub fn suspend_current_and_run_next() {
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
     // Change status to Ready
     task_inner.task_status = TaskStatus::Ready;
+    // 更新长度
+    task_inner.task_pass += BIG_STRIDE / task_inner.task_priority;
     drop(task_inner);
     // ---- release current PCB
 
